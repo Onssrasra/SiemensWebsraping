@@ -59,17 +59,11 @@ http://localhost:3000
 Geben Sie eine Artikelnummer ein:
 
 **A2V-Nummern** (z.B. `A2V00156009589`):
-- Sucht direkt in der Her.-Artikelnummer-Spalte (E3)
-- Falls nicht gefunden, sucht in der Siemens Mobility Materialnummer-Spalte (Z3)
+- Sucht direkt in der ZZARTNUM-Spalte
 
 **Andere Nummern**:
-- Sucht zuerst in der Her.-Artikelnummer-Spalte (E3)
-- Falls nicht gefunden, sucht in der Siemens Mobility Materialnummer-Spalte (Z3)
-
-**Web-Scraping Logik:**
-1. **Wenn eingegebene Nummer bereits A2V:** Verwendet diese direkt für Web-Scraping
-2. **Wenn Her.-Artikelnummer (E3) A2V ist:** Verwendet diese für Web-Scraping  
-3. **Fallback:** Verwendet Siemens Mobility Materialnummer (Z3) für Web-Scraping
+- Sucht in der "Siemens Mobility Materialnummer"-Spalte
+- Fallback-Suche in ähnlichen Spalten
 
 ### Schritt 3: Ergebnisse analysieren
 - **Links**: Excel-Daten (12 Felder in DB-optimierter Reihenfolge)

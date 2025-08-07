@@ -24,7 +24,7 @@ class SiemensProductScraper {
 
     async initBrowser() {
         if (!this.browser) {
-            console.log('Starte Browser...');
+            console.log('🚀 Starte Browser...');
             try {
                 this.browser = await chromium.launch({
                     headless: true,
@@ -37,10 +37,10 @@ class SiemensProductScraper {
                     ]
                 });
             } catch (error) {
-                console.error('Browser-Start fehlgeschlagen:', error.message);
+                console.error('❌ Browser-Start fehlgeschlagen:', error.message);
                 
                 // Versuche Browser zu installieren und erneut zu starten
-                console.log('Versuche Browser-Installation...');
+                console.log('🔄 Versuche Browser-Installation...');
                 try {
                     execSync('npx playwright install chromium', { stdio: 'inherit' });
                     
@@ -54,9 +54,9 @@ class SiemensProductScraper {
                             '--disable-features=VizDisplayCompositor'
                         ]
                     });
-                    console.log('Browser erfolgreich installiert und gestartet');
+                    console.log('✅ Browser erfolgreich installiert und gestartet');
                 } catch (installError) {
-                    console.error('Browser-Installation fehlgeschlagen:', installError.message);
+                    console.error('❌ Browser-Installation fehlgeschlagen:', installError.message);
                     throw new Error('Browser konnte nicht installiert werden. Bitte führen Sie "npm run install-browsers" manuell aus.');
                 }
             }
@@ -74,7 +74,7 @@ class SiemensProductScraper {
     async scrapeProduct(articleNumber) {
         const url = `${this.baseUrl}${articleNumber}`;
         const result = {
-            Herstellerartikelnummer: articleNumber,
+            Herstellerartikelnummer: articleNumber, // A2V number for display
             Artikelnummer: articleNumber,
             URL: url,
             Produkttitel: "Nicht gefunden",
@@ -103,7 +103,7 @@ class SiemensProductScraper {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             });
 
-            console.log(`Lade Seite: ${url}`);
+            console.log(`🔍 Lade Seite: ${url}`);
             
             const response = await page.goto(url, { 
                 waitUntil: 'networkidle', 
@@ -133,7 +133,7 @@ class SiemensProductScraper {
                     result.Produkttitel = title.replace(" | MoBase", "").trim();
                 }
             } catch (e) {
-                console.log('Titel nicht gefunden:', e.message);
+                console.log('⚠️ Titel nicht gefunden:', e.message);
             }
 
             // Extract meta description
@@ -143,24 +143,24 @@ class SiemensProductScraper {
                     result.Produktbeschreibung = metaDesc;
                 }
             } catch (e) {
-                console.log('Meta-Beschreibung nicht gefunden');
+                console.log('⚠️ Meta-Beschreibung nicht gefunden');
             }
 
             // PRIMARY METHOD: Table-based extraction (wie dein Python Code)
-            console.log('Starte robuste Table-basierte Extraktion...');
+            console.log('🔄 Starte robuste Table-basierte Extraktion...');
             await this.extractTechnicalData(page, result);
 
             // SECONDARY METHOD: Extract data from JavaScript initialData object (NUR wenn Felder fehlen)
             if (result.Werkstoff === "Nicht gefunden" || result.Materialklassifizierung === "Nicht gefunden" || result['Statistische Warennummer'] === "Nicht gefunden") {
-                console.log('Ergänze fehlende Felder mit JavaScript initialData...');
+                console.log('🔄 Ergänze fehlende Felder mit JavaScript initialData...');
                 await this.extractFromInitialData(page, result);
             } else {
-                console.log('Table-Extraktion vollständig - Skip initialData');
+                console.log('✅ Table-Extraktion vollständig - Skip initialData');
             }
 
             // TERTIARY METHOD: HTML fallback extraction
             if (result.Werkstoff === "Nicht gefunden" || result.Materialklassifizierung === "Nicht gefunden") {
-                console.log('Verwende erweiterte HTML-Extraktion...');
+                console.log('🔄 Verwende erweiterte HTML-Extraktion...');
                 await this.extractFromHTML(page, result);
             }
 
@@ -175,10 +175,10 @@ class SiemensProductScraper {
             
             if (hasData) {
                 result.Status = "Erfolgreich";
-                console.log('Scraping erfolgreich - Daten gefunden');
+                console.log('✅ Scraping erfolgreich - Daten gefunden');
             } else {
                 result.Status = "Teilweise erfolgreich - Wenig Daten gefunden";
-                console.log('Scraping unvollständig - Wenig Daten extrahiert');
+                console.log('⚠️ Scraping unvollständig - Wenig Daten extrahiert');
                 
                 // Try to get at least the page title if nothing else worked
                 try {
@@ -187,45 +187,19 @@ class SiemensProductScraper {
                         result.Produkttitel = pageTitle.replace(" | MoBase", "").trim();
                     }
                 } catch (titleError) {
-                    console.log('Auch Titel-Extraktion fehlgeschlagen');
+                    console.log('⚠️ Auch Titel-Extraktion fehlgeschlagen');
                 }
             }
             
             await page.close();
             
         } catch (error) {
-            console.error('Scraping Fehler:', error);
+            console.error('❌ Scraping Fehler:', error);
             result.Status = `Fehler: ${error.message}`;
             result.Produkttitel = "Scraping fehlgeschlagen";
         }
 
         return result;
-    }
-
-    async extractBasicInfo(page, result) {
-        try {
-            // Schnelle Extraktion der wichtigsten Informationen
-            const title = await page.title();
-            if (title && !title.includes('404') && !title.includes('Not Found')) {
-                result.Produkttitel = title.replace(" | MoBase", "").trim();
-            }
-
-            // Meta-Beschreibung
-            const metaDesc = await page.getAttribute('meta[name="description"]', 'content');
-            if (metaDesc) {
-                result.Produktbeschreibung = metaDesc;
-            }
-        } catch (e) {
-            console.log('Grundlegende Info-Extraktion fehlgeschlagen:', e.message);
-        }
-    }
-
-    needsMoreData(result) {
-        return result.Werkstoff === "Nicht gefunden" || 
-               result.Materialklassifizierung === "Nicht gefunden" || 
-               result['Statistische Warennummer'] === "Nicht gefunden" ||
-               result.Gewicht === "Nicht gefunden" ||
-               result.Abmessung === "Nicht gefunden";
     }
 
     async extractTechnicalData(page, result) {
@@ -265,7 +239,7 @@ class SiemensProductScraper {
             }
 
         } catch (error) {
-            console.log('Technische Daten Extraktion Fehler:', error.message);
+            console.log('⚠️ Technische Daten Extraktion Fehler:', error.message);
         }
     }
 
@@ -299,38 +273,38 @@ class SiemensProductScraper {
     }
 
     mapTechnicalField(key, value, result) {
-        console.log(`Table-Field Mapping: "${key}" = "${value}"`);
+        console.log(`🔍 Table-Field Mapping: "${key}" = "${value}"`);
         
         // EXAKTE REIHENFOLGE WIE IN DEINEM PYTHON CODE - Spezifische Felder ZUERST!
         if (key.includes('abmessung') || key.includes('größe') || key.includes('dimension')) {
             result.Abmessung = this.interpretDimensions(value);
-            console.log(`Abmessung aus Tabelle zugeordnet: ${value}`);
+            console.log(`✅ Abmessung aus Tabelle zugeordnet: ${value}`);
         } else if (key.includes('gewicht') && !key.includes('einheit')) {
             result.Gewicht = value;
-            console.log(`Gewicht aus Tabelle zugeordnet: ${value}`);
+            console.log(`✅ Gewicht aus Tabelle zugeordnet: ${value}`);
         } else if (key.includes('werkstoff') && !key.includes('klassifizierung')) {
             // NUR exakte "werkstoff" Übereinstimmung, NICHT bei "materialklassifizierung"
             result.Werkstoff = value;
-            console.log(`Werkstoff aus Tabelle zugeordnet: ${value}`);
+            console.log(`✅ Werkstoff aus Tabelle zugeordnet: ${value}`);
         } else if (key.includes('weitere artikelnummer') || key.includes('additional article number') || key.includes('part number')) {
             result["Weitere Artikelnummer"] = value;
-            console.log(`Weitere Artikelnummer aus Tabelle zugeordnet: ${value}`);
+            console.log(`✅ Weitere Artikelnummer aus Tabelle zugeordnet: ${value}`);
         } else if (key.includes('materialklassifizierung') || key.includes('material classification')) {
             result.Materialklassifizierung = value;
-            console.log(`Materialklassifizierung aus Tabelle zugeordnet: ${value}`);
+            console.log(`✅ Materialklassifizierung aus Tabelle zugeordnet: ${value}`);
             if (value.toLowerCase().includes('nicht schweiss')) {
                 result["Materialklassifizierung Bewertung"] = "OHNE/N/N/N/N";
             }
         } else if (key.includes('statistische warennummer') || key.includes('statistical') || key.includes('import')) {
             result["Statistische Warennummer"] = value;
-            console.log(`Statistische Warennummer aus Tabelle zugeordnet: ${value}`);
+            console.log(`✅ Statistische Warennummer aus Tabelle zugeordnet: ${value}`);
         } else if (key.includes('ursprungsland') || key.includes('origin')) {
             result.Ursprungsland = value;
-            console.log(`Ursprungsland aus Tabelle zugeordnet: ${value}`);
+            console.log(`✅ Ursprungsland aus Tabelle zugeordnet: ${value}`);
         } else if (key.includes('verfügbar') || key.includes('stock') || key.includes('lager')) {
             result.Verfügbarkeit = value;
         } else {
-            console.log(`Unbekannter Table-Schlüssel: "${key}" = "${value}"`);
+            console.log(`❓ Unbekannter Table-Schlüssel: "${key}" = "${value}"`);
         }
     }
 
@@ -407,7 +381,7 @@ class SiemensProductScraper {
 
     async extractFromInitialData(page, result) {
         try {
-            console.log('Extrahiere Daten aus window.initialData...');
+            console.log('🔍 Extrahiere Daten aus window.initialData...');
             
             // Extract data from window.initialData JavaScript object
             const productData = await page.evaluate(() => {
@@ -428,20 +402,20 @@ class SiemensProductScraper {
                         technicalSpecs: []
                     };
                     
-                    // Extract technical specifications from multiple possible locations
-                    if (productInfo.localizations && productInfo.localizations.technicalSpecifications) {
-                        extractedData.technicalSpecs = productInfo.localizations.technicalSpecifications;
-                    }
-                    
-                    // Also extract direct product properties as backup
-                    extractedData.directProperties = {
-                        weight: productInfo.weight || '',
-                        dimensions: productInfo.dimensions || '',
-                        basicMaterial: productInfo.basicMaterial || '',
-                        materialClassification: productInfo.materialClassification || '',
-                        importCodeNumber: productInfo.importCodeNumber || '',
-                        additionalMaterialNumbers: productInfo.additionalMaterialNumbers || ''
-                    };
+                                    // Extract technical specifications from multiple possible locations
+                if (productInfo.localizations && productInfo.localizations.technicalSpecifications) {
+                    extractedData.technicalSpecs = productInfo.localizations.technicalSpecifications;
+                }
+                
+                // Also extract direct product properties as backup
+                extractedData.directProperties = {
+                    weight: productInfo.weight || '',
+                    dimensions: productInfo.dimensions || '',
+                    basicMaterial: productInfo.basicMaterial || '',
+                    materialClassification: productInfo.materialClassification || '',
+                    importCodeNumber: productInfo.importCodeNumber || '',
+                    additionalMaterialNumbers: productInfo.additionalMaterialNumbers || ''
+                };
                     
                     return extractedData;
                 } catch (e) {
@@ -451,7 +425,7 @@ class SiemensProductScraper {
             });
 
             if (productData) {
-                console.log('Produktdaten aus initialData gefunden');
+                console.log('✅ Produktdaten aus initialData gefunden');
                 
                 // Map basic product information
                 if (productData.name) {
@@ -469,7 +443,7 @@ class SiemensProductScraper {
                 // Map technical specifications with improved key matching
                 if (productData.technicalSpecs && productData.technicalSpecs.length > 0) {
                     // Debug: Show all available keys
-                    console.log('Alle verfügbaren technische Spezifikationen:');
+                    console.log('📋 Alle verfügbaren technische Spezifikationen:');
                     productData.technicalSpecs.forEach(spec => {
                         console.log(`   "${spec.key}" = "${spec.value}"`);
                     });
@@ -477,42 +451,42 @@ class SiemensProductScraper {
                         const key = spec.key.toLowerCase().trim();
                         const value = spec.value;
                         
-                        console.log(`Mapping spec: "${key}" = "${value}"`);
+                        console.log(`🔍 Mapping spec: "${key}" = "${value}"`);
                         
                         // KRITISCH: NUR fehlende Felder ergänzen, nicht überschreiben!
                         if (key.includes('materialklassifizierung') || key.includes('material classification')) {
                             if (!result.Materialklassifizierung || result.Materialklassifizierung === "Nicht gefunden") {
                                 result.Materialklassifizierung = value;
-                                console.log(`InitialData Materialklassifizierung ergänzt: ${value}`);
+                                console.log(`✅ InitialData Materialklassifizierung ergänzt: ${value}`);
                             }
                         } else if (key.includes('statistische warennummer') || key.includes('statistical') || key.includes('import')) {
                             if (!result['Statistische Warennummer'] || result['Statistische Warennummer'] === "Nicht gefunden") {
                                 result['Statistische Warennummer'] = value;
-                                console.log(`InitialData Statistische Warennummer ergänzt: ${value}`);
+                                console.log(`✅ InitialData Statistische Warennummer ergänzt: ${value}`);
                             }
                         } else if (key.includes('weitere artikelnummer') || key.includes('additional material')) {
                             if (!result['Weitere Artikelnummer'] || result['Weitere Artikelnummer'] === "Nicht gefunden") {
                                 result['Weitere Artikelnummer'] = value;
-                                console.log(`InitialData Weitere Artikelnummer ergänzt: ${value}`);
+                                console.log(`✅ InitialData Weitere Artikelnummer ergänzt: ${value}`);
                             }
                         } else if (key.includes('abmessungen') || key.includes('dimension')) {
                             if (!result.Abmessung || result.Abmessung === "Nicht gefunden") {
                                 result.Abmessung = value;
-                                console.log(`InitialData Abmessung ergänzt: ${value}`);
+                                console.log(`✅ InitialData Abmessung ergänzt: ${value}`);
                             }
                         } else if (key.includes('gewicht') || key.includes('weight')) {
                             if (!result.Gewicht || result.Gewicht === "Nicht gefunden") {
                                 result.Gewicht = value;
-                                console.log(`InitialData Gewicht ergänzt: ${value}`);
+                                console.log(`✅ InitialData Gewicht ergänzt: ${value}`);
                             }
                         } else if (key.includes('werkstoff') && !key.includes('klassifizierung')) {
                             // NUR ergänzen wenn Werkstoff fehlt
                             if (!result.Werkstoff || result.Werkstoff === "Nicht gefunden") {
                                 result.Werkstoff = value;
-                                console.log(`InitialData Werkstoff ergänzt: ${value}`);
+                                console.log(`✅ InitialData Werkstoff ergänzt: ${value}`);
                             }
                         } else {
-                            console.log(`InitialData Skip: "${key}" = "${value}"`);
+                            console.log(`🔄 InitialData Skip: "${key}" = "${value}"`);
                         }
                     });
                 }
@@ -521,31 +495,31 @@ class SiemensProductScraper {
                 if (productData.directProperties) {
                     if (result.Gewicht === "Nicht gefunden" && productData.directProperties.weight) {
                         result.Gewicht = productData.directProperties.weight.toString();
-                        console.log(`Fallback Gewicht: ${result.Gewicht}`);
+                        console.log(`🔄 Fallback Gewicht: ${result.Gewicht}`);
                     }
                     if (result.Abmessung === "Nicht gefunden" && productData.directProperties.dimensions) {
                         result.Abmessung = productData.directProperties.dimensions;
-                        console.log(`Fallback Abmessung: ${result.Abmessung}`);
+                        console.log(`🔄 Fallback Abmessung: ${result.Abmessung}`);
                     }
                     if (result.Werkstoff === "Nicht gefunden" && productData.directProperties.basicMaterial) {
                         result.Werkstoff = productData.directProperties.basicMaterial;
-                        console.log(`Fallback Werkstoff: ${result.Werkstoff}`);
+                        console.log(`🔄 Fallback Werkstoff: ${result.Werkstoff}`);
                     }
                     if (result.Materialklassifizierung === "Nicht gefunden" && productData.directProperties.materialClassification) {
                         result.Materialklassifizierung = productData.directProperties.materialClassification;
-                        console.log(`Fallback Materialklassifizierung: ${result.Materialklassifizierung}`);
+                        console.log(`🔄 Fallback Materialklassifizierung: ${result.Materialklassifizierung}`);
                     }
                     if (result['Statistische Warennummer'] === "Nicht gefunden" && productData.directProperties.importCodeNumber) {
                         result['Statistische Warennummer'] = productData.directProperties.importCodeNumber;
-                        console.log(`Fallback Statistische Warennummer: ${result['Statistische Warennummer']}`);
+                        console.log(`🔄 Fallback Statistische Warennummer: ${result['Statistische Warennummer']}`);
                     }
                     if (result['Weitere Artikelnummer'] === "Nicht gefunden" && productData.directProperties.additionalMaterialNumbers) {
                         result['Weitere Artikelnummer'] = productData.directProperties.additionalMaterialNumbers;
-                        console.log(`Fallback Weitere Artikelnummer: ${result['Weitere Artikelnummer']}`);
+                        console.log(`🔄 Fallback Weitere Artikelnummer: ${result['Weitere Artikelnummer']}`);
                     }
                 }
                 
-                console.log('Extrahierte Daten:', {
+                console.log('📊 Extrahierte Daten:', {
                     titel: result.Produkttitel,
                     weitere_artikelnummer: result['Weitere Artikelnummer'],
                     abmessung: result.Abmessung,
@@ -556,11 +530,11 @@ class SiemensProductScraper {
                 });
                 
             } else {
-                console.log('Keine initialData gefunden, verwende Fallback-Methode');
+                console.log('⚠️ Keine initialData gefunden, verwende Fallback-Methode');
             }
             
         } catch (error) {
-            console.log('Fehler bei initialData Extraktion:', error.message);
+            console.log('⚠️ Fehler bei initialData Extraktion:', error.message);
         }
     }
 

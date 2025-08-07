@@ -497,7 +497,7 @@
 
             updateProgressMessage(messageElement, newContent, isComplete = false) {
                 if (isComplete) {
-                    messageElement.innerHTML = `✓ ${newContent}`;
+                    messageElement.innerHTML = `✅ ${newContent}`;
                     messageElement.style.background = '#d5f4e6';
                 } else {
                     messageElement.innerHTML = `
@@ -509,7 +509,7 @@
 
             async handleFileUpload(file) {
                 if (!file.name.match(/\.(xlsx|xls)$/)) {
-                    this.addMessage('Bitte wählen Sie eine gültige Excel-Datei (.xlsx oder .xls)', 'system');
+                    this.addMessage('❌ Bitte wählen Sie eine gültige Excel-Datei (.xlsx oder .xls)', 'system');
                     return;
                 }
 
@@ -528,7 +528,7 @@
                     const fileUpload = document.getElementById('fileUpload');
                     const fileUploadText = document.getElementById('fileUploadText');
                     fileUpload.classList.add('has-file');
-                    fileUploadText.innerHTML = `✓ ${file.name}<br><small>${data.length} Produkte geladen</small>`;
+                    fileUploadText.innerHTML = `✅ ${file.name}<br><small>${data.length} Produkte geladen</small>`;
                     
                     // Enable input
                     document.getElementById('messageInput').disabled = false;
@@ -538,7 +538,7 @@
                     
                 } catch (error) {
                     this.updateProgressMessage(progressMsg, 'Fehler beim Laden der Excel-Datei', true);
-                    this.addMessage(`Fehler beim Laden der Excel-Datei: ${error.message}`, 'system');
+                    this.addMessage(`❌ Fehler beim Laden der Excel-Datei: ${error.message}`, 'system');
                 }
             }
 
@@ -556,7 +556,7 @@
                 // Finde wahrscheinliche Spalten für wichtige Felder
                 this.columnMapping = this.detectColumnMapping(this.availableColumns);
                 
-                this.addMessage('Excel-Datei analysiert! Geben Sie nun eine Herstellerartikelnummer ein (z.B. A2V00001178020).');
+                this.addMessage('✅ Excel-Datei analysiert! Geben Sie nun eine Herstellerartikelnummer ein (z.B. A2V00001178020 oder andere Nummer).');
             }
 
             detectColumnMapping(columns) {
@@ -707,97 +707,87 @@
             }
 
             async processProductSearch(articleNumber) {
-                // Schritt 1: Suche in Excel-Daten
+                // Schritt 1: Intelligente Suche in Excel-Daten
                 const searchMsg = this.addProgressMessage('Suche in DB-Tabelle...');
                 
-                let excelProduct = this.findProductInExcel(articleNumber);
+                let excelProduct = null;
+                let searchMethod = '';
+                let webSearchNumber = '';
 
-                if (excelProduct) {
-                    this.updateProgressMessage(searchMsg, 'Produkt gefunden', true);
+                // NEUE LOGIK: Prüfe ob es eine A2V-Nummer ist
+                if (articleNumber.toUpperCase().startsWith('A2V')) {
+                    // A2V-Nummer: Suche direkt in "Siemens Mobility Materialnummer" Spalte
+                    searchMethod = 'A2V-Nummer in Siemens Mobility Materialnummer';
+                    excelProduct = this.findProductBySiemensMobilityNumber(articleNumber);
+                    webSearchNumber = articleNumber;
                 } else {
+                    // Nicht-A2V-Nummer: Suche in "Her.-Artikelnummer" Spalte
+                    searchMethod = 'Nicht-A2V-Nummer in Her.-Artikelnummer';
+                    excelProduct = this.findProductByManufacturerNumber(articleNumber);
+                    
+                    if (excelProduct) {
+                        // Wenn gefunden, verwende die A2V-Nummer aus "Siemens Mobility Materialnummer" für Web-Suche
+                        webSearchNumber = this.getExcelFieldValue(excelProduct, 'siemensMobilityNumber');
+                        if (!webSearchNumber || !webSearchNumber.toString().toUpperCase().startsWith('A2V')) {
+                            this.updateProgressMessage(searchMsg, 'Produkt gefunden, aber keine gültige A2V-Nummer für Web-Suche', true);
+                            this.addMessage(`⚠️ Produkt gefunden, aber keine gültige A2V-Nummer (${webSearchNumber}) für Web-Suche verfügbar.`);
+                            webSearchNumber = null;
+                        } else {
+                            this.updateProgressMessage(searchMsg, `Produkt gefunden - Verwende A2V-Nummer ${webSearchNumber} für Web-Suche`, true);
+                        }
+                    }
+                }
+
+                if (!excelProduct) {
                     this.updateProgressMessage(searchMsg, 'Produkt nicht gefunden', true);
-                    this.addMessage(`Die Herstellerartikelnummer "${articleNumber}" wurde in der Excel-Tabelle nicht gefunden.`);
+                    this.addMessage(`❌ Die Herstellerartikelnummer "${articleNumber}" wurde in der Excel-Tabelle nicht gefunden.`);
                     return;
                 }
 
-                // Schritt 2: Web-Scraping (optimiert)
-                const webMsg = this.addProgressMessage('Suche auf MyMobase/SiemensMobility...');
-                
+                // Schritt 2: Web-Scraping (nur wenn A2V-Nummer verfügbar)
                 let webProduct;
-                try {
-                    // Bestimme A2V-Nummer für Web-Scraping
-                    let webSearchNumber;
+                if (webSearchNumber) {
+                    const webMsg = this.addProgressMessage(`Suche auf MyMobase/SiemensMobility mit A2V-Nummer ${webSearchNumber}...`);
                     
-                    // Prüfe zuerst, ob die eingegebene Artikelnummer bereits eine A2V-Nummer ist
-                    if (articleNumber.toUpperCase().startsWith('A2V')) {
-                        webSearchNumber = articleNumber;
-                        console.log(`Verwende eingegebene A2V-Nummer: ${webSearchNumber}`);
-                    } else {
-                        // Prüfe, ob die Her.-Artikelnummer (Spalte E3) bereits eine A2V-Nummer ist
-                        const manufacturerNumber = this.getExcelFieldValue(excelProduct, 'manufacturerNumber');
-                        if (manufacturerNumber && manufacturerNumber.toString().toUpperCase().startsWith('A2V')) {
-                            webSearchNumber = manufacturerNumber;
-                            console.log(`Verwende A2V-Nummer aus Her.-Artikelnummer: ${webSearchNumber}`);
-                        } else {
-                            // Fallback: Verwende Siemens Mobility Materialnummer (Spalte Z3)
-                            webSearchNumber = this.getExcelFieldValue(excelProduct, 'siemensMobilityNumber');
-                            if (!webSearchNumber || !webSearchNumber.toString().toUpperCase().startsWith('A2V')) {
-                                throw new Error(`Keine gültige A2V-Nummer gefunden. Her.-Artikelnummer: "${manufacturerNumber}", Siemens Mobility Materialnummer: "${webSearchNumber}"`);
-                            }
-                            console.log(`Verwende A2V-Nummer aus Siemens Mobility Materialnummer: ${webSearchNumber}`);
-                        }
+                    try {
+                        webProduct = await this.fetchWebData(webSearchNumber);
+                        this.updateProgressMessage(webMsg, 'Web-Daten erfolgreich abgerufen', true);
+                    } catch (error) {
+                        this.updateProgressMessage(webMsg, 'Web-Daten-Abruf fehlgeschlagen', true);
+                        webProduct = this.createFallbackWebData(excelProduct, error.message);
                     }
-                    
-                    // Optimiertes Web-Scraping mit reduzierter Timeout
-                    webProduct = await this.fetchWebData(webSearchNumber);
-                    this.updateProgressMessage(webMsg, 'Web-Daten erfolgreich abgerufen', true);
-                    
-                } catch (error) {
-                    this.updateProgressMessage(webMsg, 'Web-Daten-Abruf fehlgeschlagen', true);
-                    webProduct = this.createFallbackWebData(excelProduct, error.message);
+                } else {
+                    webProduct = this.createFallbackWebData(excelProduct, 'Keine A2V-Nummer verfügbar');
                 }
 
-                // Schritt 3: Vergleich (optimiert)
+                // Schritt 3: Vergleich
                 const compareMsg = this.addProgressMessage('Vergleiche Datensätze...');
-                await new Promise(resolve => setTimeout(resolve, 300)); // Reduziert von 1s auf 0.3s
+                await new Promise(resolve => setTimeout(resolve, 1000));
                 
                 this.updateProgressMessage(compareMsg, 'Vergleich abgeschlossen', true);
                 
                 // Ergebnisse anzeigen
-                this.displayComparison(excelProduct, webProduct, articleNumber);
+                this.displayComparison(excelProduct, webProduct, articleNumber, searchMethod);
                 
-                this.addMessage('Vergleich erfolgreich abgeschlossen! Möchten Sie eine andere Artikelnummer eingeben?');
+                this.addMessage('✅ Vergleich erfolgreich abgeschlossen! Möchten Sie eine andere Artikelnummer eingeben?');
             }
 
-            findProductInExcel(articleNumber) {
-                if (!this.excelData) return null;
+            findProductBySiemensMobilityNumber(articleNumber) {
+                if (!this.excelData || !this.columnMapping.siemensMobilityNumber) return null;
 
-                // Suche zuerst nach Her.-Artikelnummer (Spalte E3)
-                if (this.columnMapping.manufacturerNumber) {
-                    const foundByManufacturer = this.excelData.find(product => {
-                        const value = product[this.columnMapping.manufacturerNumber];
-                        return value && value.toString().toUpperCase().trim() === articleNumber.toUpperCase().trim();
-                    });
-                    if (foundByManufacturer) {
-                        console.log(`Produkt gefunden in Her.-Artikelnummer: ${articleNumber}`);
-                        return foundByManufacturer;
-                    }
-                }
+                return this.excelData.find(product => {
+                    const value = product[this.columnMapping.siemensMobilityNumber];
+                    return value && value.toString().toUpperCase().trim() === articleNumber.toUpperCase().trim();
+                });
+            }
 
-                // Falls nicht gefunden, suche nach Siemens Mobility Materialnummer (Spalte Z3)
-                if (this.columnMapping.siemensMobilityNumber) {
-                    const foundBySiemens = this.excelData.find(product => {
-                        const value = product[this.columnMapping.siemensMobilityNumber];
-                        return value && value.toString().toUpperCase().trim() === articleNumber.toUpperCase().trim();
-                    });
-                    if (foundBySiemens) {
-                        console.log(`Produkt gefunden in Siemens Mobility Materialnummer: ${articleNumber}`);
-                        return foundBySiemens;
-                    }
-                }
+            findProductByManufacturerNumber(articleNumber) {
+                if (!this.excelData || !this.columnMapping.manufacturerNumber) return null;
 
-                console.log(`Produkt nicht gefunden: ${articleNumber}`);
-                return null;
+                return this.excelData.find(product => {
+                    const value = product[this.columnMapping.manufacturerNumber];
+                    return value && value.toString().toUpperCase().trim() === articleNumber.toUpperCase().trim();
+                });
             }
 
             getExcelFieldValue(product, fieldType) {
@@ -837,9 +827,6 @@
 
             async fetchWebData(articleNumber) {
                 try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s Timeout
-
                     const response = await fetch('/api/scrape', {
                         method: 'POST',
                         headers: {
@@ -847,11 +834,8 @@
                         },
                         body: JSON.stringify({
                             articleNumber: articleNumber
-                        }),
-                        signal: controller.signal
+                        })
                     });
-
-                    clearTimeout(timeoutId);
 
                     if (!response.ok) {
                         throw new Error(`HTTP ${response.status}`);
@@ -878,28 +862,14 @@
                     };
 
                 } catch (error) {
-                    if (error.name === 'AbortError') {
-                        throw new Error('Timeout: Web-Scraping dauerte zu lange');
-                    }
                     throw error;
                 }
             }
 
             createFallbackWebData(excelProduct, errorMessage) {
-                // Bestimme A2V-Nummer für Fallback - gleiche Logik wie beim Web-Scraping
-                let a2vNumber = 'A2V-unbekannt';
-                
-                // Prüfe zuerst Her.-Artikelnummer (Spalte E3)
-                const manufacturerNumber = this.getExcelFieldValue(excelProduct, 'manufacturerNumber');
-                if (manufacturerNumber && manufacturerNumber.toString().toUpperCase().startsWith('A2V')) {
-                    a2vNumber = manufacturerNumber;
-                } else {
-                    // Fallback: Verwende Siemens Mobility Materialnummer (Spalte Z3)
-                    const siemensNumber = this.getExcelFieldValue(excelProduct, 'siemensMobilityNumber');
-                    if (siemensNumber && siemensNumber.toString().toUpperCase().startsWith('A2V')) {
-                        a2vNumber = siemensNumber;
-                    }
-                }
+                const a2vNumber = this.getExcelFieldValue(excelProduct, 'siemensMobilityNumber') || 
+                                 this.getExcelFieldValue(excelProduct, 'manufacturerNumber') || 
+                                 'A2V-unbekannt';
                 
                 return {
                     'Herstellerartikelnummer': a2vNumber,
@@ -914,18 +884,21 @@
                 };
             }
 
-            displayComparison(excelProduct, webProduct, articleNumber) {
+            displayComparison(excelProduct, webProduct, articleNumber, searchMethod) {
                 const resultsContent = document.getElementById('resultsContent');
                 
                 resultsContent.innerHTML = `
                     <div style="margin-bottom: 20px;">
-                        <h3>Suchergebnis für: <span style="color: #333;">${articleNumber}</span></h3>
+                        <h3>🔍 Suchergebnis für: <span style="color: #2c3e50;">${articleNumber}</span></h3>
+                        <p style="color: #666; font-size: 14px; margin-top: 5px;">
+                            <strong>Suchmethode:</strong> ${searchMethod}
+                        </p>
                     </div>
 
                     <div class="comparison-container">
                         <div class="data-table excel-data">
                             <div class="table-header">
-                                Excel-Daten (Deutsche Bahn)
+                                📊 Excel-Daten (Deutsche Bahn)
                             </div>
                             <div class="table-content">
                                 ${this.renderDataTable(excelProduct, 'excel')}
@@ -934,7 +907,7 @@
 
                         <div class="data-table web-data">
                             <div class="table-header">
-                                Web-Daten (MyMobase/SiemensMobility)
+                                🌐 Web-Daten (MyMobase/SiemensMobility)
                             </div>
                             <div class="table-content">
                                 ${this.renderDataTable(webProduct, 'web')}
@@ -944,7 +917,7 @@
 
                     <div class="comparison-table">
                         <div class="table-header">
-                            Detaillierter Vergleich - DB vs. Web
+                            ⚖️ Detaillierter Vergleich - DB vs. Web
                         </div>
                         <div class="table-content">
                             ${this.renderComparisonTable(excelProduct, webProduct)}
@@ -1019,7 +992,7 @@
                         }
                         
                         if (field.isLink && value && value !== 'Nicht gefunden') {
-                            displayValue = `<a href="${value}" target="_blank" class="product-link">Mehr Informationen</a>`;
+                            displayValue = `<a href="${value}" target="_blank" class="product-link">🔗 Mehr Informationen</a>`;
                         }
                         
                         html += `
