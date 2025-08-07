@@ -363,19 +363,19 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>DB Produktdaten Vergleichstool</h1>
+            <h1>🚆 DB Produktdaten Vergleichstool</h1>
             <p>Automatischer Vergleich von Siemens-Produktdaten zwischen Excel-Tabelle und MyMobase</p>
         </div>
 
         <div class="main-content">
             <div class="chat-section">
                 <div class="chat-header">
-                    Chat-Interface
+                    💬 Chat-Interface
                 </div>
                 
                 <div class="chat-messages" id="chatMessages">
                     <div class="message bot">
-                        <strong>DB-Assistent:</strong><br>
+                        <strong>🤖 DB-Assistent:</strong><br>
                         Willkommen! Laden Sie zunächst Ihre Excel-Tabelle mit den DB-Produktdaten hoch.
                     </div>
                 </div>
@@ -384,7 +384,7 @@
                     <div class="file-upload" id="fileUpload">
                         <input type="file" id="excelFile" accept=".xlsx,.xls" style="display: none;">
                         <div id="fileUploadText">
-                            Excel-Datei hier ablegen oder klicken zum Auswählen<br>
+                            📁 Excel-Datei hier ablegen oder klicken zum Auswählen<br>
                             <small>Unterstützte Formate: .xlsx, .xls</small>
                         </div>
                     </div>
@@ -406,7 +406,7 @@
 
             <div class="results-section">
                 <div class="results-header">
-                    Vergleichsergebnisse
+                    📊 Vergleichsergebnisse
                 </div>
                 
                 <div class="results-content" id="resultsContent">
@@ -471,9 +471,9 @@
                 messageDiv.className = `message ${type}`;
                 
                 if (type === 'bot') {
-                    messageDiv.innerHTML = `<strong>DB-Assistent:</strong><br>${content}`;
+                    messageDiv.innerHTML = `<strong>🤖 DB-Assistent:</strong><br>${content}`;
                 } else if (type === 'user') {
-                    messageDiv.innerHTML = `<strong>Sie:</strong><br>${content}`;
+                    messageDiv.innerHTML = `<strong>👤 Sie:</strong><br>${content}`;
                 } else {
                     messageDiv.innerHTML = content;
                 }
@@ -556,7 +556,7 @@
                 // Finde wahrscheinliche Spalten für wichtige Felder
                 this.columnMapping = this.detectColumnMapping(this.availableColumns);
                 
-                this.addMessage('✅ Excel-Datei analysiert! Geben Sie nun eine Herstellerartikelnummer ein (z.B. A2V00001178020 oder andere Nummer).');
+                this.addMessage('✅ Excel-Datei analysiert! Geben Sie nun eine Herstellerartikelnummer ein (z.B. A2V00001178020).');
             }
 
             detectColumnMapping(columns) {
@@ -570,8 +570,11 @@
                     
                     // Siemens Mobility Materialnummer
                     if (trimmedCol === 'Siemens Mobility Materialnummer' ||
-                        lowerCol.includes('siemens mobility materialnummer')) {
+                        lowerCol.includes('siemens mobility materialnummer') ||
+                        lowerCol.includes('siemens mobility') ||
+                        lowerCol.includes('materialnummer')) {
                         mapping.siemensMobilityNumber = col;
+                        console.log('🔍 Siemens Mobility Materialnummer erkannt:', col);
                     }
                     
                     // Materialkurztext
@@ -588,8 +591,11 @@
                     // Her.-Artikelnummer
                     if (trimmedCol === 'Her.-Artikelnummer' || 
                         lowerCol.includes('her.-artikelnummer') || 
-                        lowerCol.includes('herstellerartikelnummer')) {
+                        lowerCol.includes('herstellerartikelnummer') ||
+                        lowerCol.includes('her. artikelnummer') ||
+                        lowerCol.includes('hersteller artikelnummer')) {
                         mapping.manufacturerNumber = col;
+                        console.log('🔍 Her.-Artikelnummer erkannt:', col);
                     }
                     
                     // Länge
@@ -641,6 +647,9 @@
                     }
                 });
 
+                // Debug-Ausgabe der erkannten Spalten
+                console.log('🔍 Erkannte Spaltenzuordnung:', mapping);
+                
                 return mapping;
             }
 
@@ -706,58 +715,61 @@
                 await this.processProductSearch(query);
             }
 
+            findProductInExcel(articleNumber) {
+                if (!this.excelData) return null;
+
+                const searchNumber = articleNumber.toUpperCase().trim();
+                
+                // Benutzer gibt immer eine Nummer aus der "Her.-Artikelnummer"-Spalte ein
+                if (this.columnMapping.manufacturerNumber) {
+                    return this.excelData.find(product => {
+                        const value = product[this.columnMapping.manufacturerNumber];
+                        return value && value.toString().toUpperCase().trim() === searchNumber;
+                    });
+                }
+                
+                return null;
+            }
+
             async processProductSearch(articleNumber) {
-                // Schritt 1: Intelligente Suche in Excel-Daten
+                // Schritt 1: Suche in Excel-Daten (immer in Her.-Artikelnummer-Spalte)
                 const searchMsg = this.addProgressMessage('Suche in DB-Tabelle...');
                 
-                let excelProduct = null;
-                let searchMethod = '';
-                let webSearchNumber = '';
+                let excelProduct = this.findProductInExcel(articleNumber);
 
-                // NEUE LOGIK: Prüfe ob es eine A2V-Nummer ist
-                if (articleNumber.toUpperCase().startsWith('A2V')) {
-                    // A2V-Nummer: Suche direkt in "Siemens Mobility Materialnummer" Spalte
-                    searchMethod = 'A2V-Nummer in Siemens Mobility Materialnummer';
-                    excelProduct = this.findProductBySiemensMobilityNumber(articleNumber);
-                    webSearchNumber = articleNumber;
+                if (excelProduct) {
+                    this.updateProgressMessage(searchMsg, 'Produkt gefunden', true);
                 } else {
-                    // Nicht-A2V-Nummer: Suche in "Her.-Artikelnummer" Spalte
-                    searchMethod = 'Nicht-A2V-Nummer in Her.-Artikelnummer';
-                    excelProduct = this.findProductByManufacturerNumber(articleNumber);
-                    
-                    if (excelProduct) {
-                        // Wenn gefunden, verwende die A2V-Nummer aus "Siemens Mobility Materialnummer" für Web-Suche
-                        webSearchNumber = this.getExcelFieldValue(excelProduct, 'siemensMobilityNumber');
-                        if (!webSearchNumber || !webSearchNumber.toString().toUpperCase().startsWith('A2V')) {
-                            this.updateProgressMessage(searchMsg, 'Produkt gefunden, aber keine gültige A2V-Nummer für Web-Suche', true);
-                            this.addMessage(`⚠️ Produkt gefunden, aber keine gültige A2V-Nummer (${webSearchNumber}) für Web-Suche verfügbar.`);
-                            webSearchNumber = null;
-                        } else {
-                            this.updateProgressMessage(searchMsg, `Produkt gefunden - Verwende A2V-Nummer ${webSearchNumber} für Web-Suche`, true);
-                        }
-                    }
-                }
-
-                if (!excelProduct) {
                     this.updateProgressMessage(searchMsg, 'Produkt nicht gefunden', true);
                     this.addMessage(`❌ Die Herstellerartikelnummer "${articleNumber}" wurde in der Excel-Tabelle nicht gefunden.`);
                     return;
                 }
 
-                // Schritt 2: Web-Scraping (nur wenn A2V-Nummer verfügbar)
+                // Schritt 2: Web-Scraping
+                const webMsg = this.addProgressMessage('Suche auf MyMobase/SiemensMobility...');
+                
                 let webProduct;
-                if (webSearchNumber) {
-                    const webMsg = this.addProgressMessage(`Suche auf MyMobase/SiemensMobility mit A2V-Nummer ${webSearchNumber}...`);
-                    
-                    try {
-                        webProduct = await this.fetchWebData(webSearchNumber);
-                        this.updateProgressMessage(webMsg, 'Web-Daten erfolgreich abgerufen', true);
-                    } catch (error) {
-                        this.updateProgressMessage(webMsg, 'Web-Daten-Abruf fehlgeschlagen', true);
-                        webProduct = this.createFallbackWebData(excelProduct, error.message);
+                try {
+                    // Bestimme A2V-Nummer für Web-Suche
+                    let webSearchNumber;
+                    if (articleNumber.toUpperCase().startsWith('A2V')) {
+                        // Wenn die eingegebene Nummer bereits eine A2V-Nummer ist, verwende sie direkt
+                        webSearchNumber = articleNumber;
+                    } else {
+                        // Ansonsten verwende die Siemens Mobility Materialnummer aus dem Excel-Datensatz
+                        webSearchNumber = this.getExcelFieldValue(excelProduct, 'siemensMobilityNumber');
+                        if (!webSearchNumber || !webSearchNumber.toString().toUpperCase().startsWith('A2V')) {
+                            throw new Error('Keine gültige A2V-Nummer für Web-Scraping gefunden');
+                        }
                     }
-                } else {
-                    webProduct = this.createFallbackWebData(excelProduct, 'Keine A2V-Nummer verfügbar');
+                    
+                    // Web-Scraping durchführen
+                    webProduct = await this.fetchWebData(webSearchNumber);
+                    this.updateProgressMessage(webMsg, 'Web-Daten erfolgreich abgerufen', true);
+                    
+                } catch (error) {
+                    this.updateProgressMessage(webMsg, 'Web-Daten-Abruf fehlgeschlagen', true);
+                    webProduct = this.createFallbackWebData(excelProduct, error.message);
                 }
 
                 // Schritt 3: Vergleich
@@ -767,27 +779,9 @@
                 this.updateProgressMessage(compareMsg, 'Vergleich abgeschlossen', true);
                 
                 // Ergebnisse anzeigen
-                this.displayComparison(excelProduct, webProduct, articleNumber, searchMethod);
+                this.displayComparison(excelProduct, webProduct, articleNumber);
                 
                 this.addMessage('✅ Vergleich erfolgreich abgeschlossen! Möchten Sie eine andere Artikelnummer eingeben?');
-            }
-
-            findProductBySiemensMobilityNumber(articleNumber) {
-                if (!this.excelData || !this.columnMapping.siemensMobilityNumber) return null;
-
-                return this.excelData.find(product => {
-                    const value = product[this.columnMapping.siemensMobilityNumber];
-                    return value && value.toString().toUpperCase().trim() === articleNumber.toUpperCase().trim();
-                });
-            }
-
-            findProductByManufacturerNumber(articleNumber) {
-                if (!this.excelData || !this.columnMapping.manufacturerNumber) return null;
-
-                return this.excelData.find(product => {
-                    const value = product[this.columnMapping.manufacturerNumber];
-                    return value && value.toString().toUpperCase().trim() === articleNumber.toUpperCase().trim();
-                });
             }
 
             getExcelFieldValue(product, fieldType) {
@@ -884,15 +878,12 @@
                 };
             }
 
-            displayComparison(excelProduct, webProduct, articleNumber, searchMethod) {
+            displayComparison(excelProduct, webProduct, articleNumber) {
                 const resultsContent = document.getElementById('resultsContent');
                 
                 resultsContent.innerHTML = `
                     <div style="margin-bottom: 20px;">
                         <h3>🔍 Suchergebnis für: <span style="color: #2c3e50;">${articleNumber}</span></h3>
-                        <p style="color: #666; font-size: 14px; margin-top: 5px;">
-                            <strong>Suchmethode:</strong> ${searchMethod}
-                        </p>
                     </div>
 
                     <div class="comparison-container">
